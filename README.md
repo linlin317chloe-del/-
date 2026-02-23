@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>恰口科研 - 員工行動助手</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap');
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; }
+        .glass { background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.3); }
+        .app-gradient { background: linear-gradient(135deg, #1e293b 0%, #334155 100%); }
+        .active-tab { color: #6366f1; border-top: 3px solid #6366f1; }
+        #map { height: 200px; border-radius: 1.5rem; z-index: 10; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="max-w-md mx-auto min-h-screen pb-24 relative shadow-2xl bg-slate-50 overflow-x-hidden">
+    
+    <header class="app-gradient p-8 pb-16 rounded-b-[3rem] text-white relative shadow-lg">
+        <div class="flex justify-between items-center">
+            <div>
+                <h1 class="text-xl font-bold">恰口科研 Chiao Kou</h1>
+                <p class="text-slate-300 text-xs mt-1">{{ todayDate }}</p>
+            </div>
+            <div class="flex gap-2">
+                <button @click="activeTab = 'profile'" class="bg-white/10 p-3 rounded-2xl"><i class="fa-solid fa-user-tie"></i></button>
+            </div>
+        </div>
+    </header>
+
+    <main class="px-5 -mt-10 space-y-6 relative z-10">
+
+        <div v-if="activeTab === 'home'" class="space-y-6">
+            <section class="glass p-6 rounded-[2rem] shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-slate-700 text-sm italic">CLOCK-IN SYSTEM</h3>
+                    <span class="text-[10px] bg-green-100 text-green-600 px-2 py-1 rounded-lg font-bold">每日 8 小時制</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <button @click="handleClock('in')" :disabled="attendance.in" :class="attendance.in ? 'bg-slate-100 text-slate-400' : 'bg-indigo-50 text-indigo-600'" class="py-5 rounded-3xl font-bold shadow-inner">
+                        <i class="fa-solid fa-sun mb-1 block"></i>{{ attendance.in || '上班打卡' }}
+                    </button>
+                    <button @click="handleClock('out')" :disabled="!attendance.in || attendance.out" :class="attendance.out ? 'bg-slate-100 text-slate-400' : 'bg-orange-50 text-orange-600'" class="py-5 rounded-3xl font-bold">
+                        <i class="fa-solid fa-moon mb-1 block"></i>{{ attendance.out || '下班打卡' }}
+                    </button>
+                </div>
+                <p class="text-[10px] text-slate-400 mt-4 text-center">※ 延長工時請填寫加班申請單經核准 </p>
+            </section>
+
+            <section class="glass p-5 rounded-[2rem] shadow-xl">
+                <h3 class="font-bold text-slate-700 text-sm mb-3"><i class="fa-solid fa-map-location-dot mr-2 text-blue-500"></i>差旅地圖與導航</h3>
+                <div id="map" class="mb-3"></div>
+                <div class="flex gap-2">
+                    <input v-model="locationSearch" placeholder="輸入目的地..." class="flex-1 bg-slate-100 p-3 rounded-xl text-sm outline-none">
+                    <button @click="openNavigation" class="bg-blue-600 text-white px-4 rounded-xl shadow-lg"><i class="fa-solid fa-location-arrow"></i></button>
+                </div>
+            </section>
+
+            <div class="grid grid-cols-2 gap-3">
+                <button @click="openSOP('in')" class="p-4 bg-white rounded-2xl shadow-sm border border-slate-100 text-left">
+                    <i class="fa-solid fa-door-open text-blue-400 mb-2"></i>
+                    <p class="text-xs font-bold">入職手續</p>
+                    <p class="text-[9px] text-slate-400">繳交證件、體檢 [cite: 8]</p>
+                </button>
+                <button @click="openSOP('out')" class="p-4 bg-white rounded-2xl shadow-sm border border-slate-100 text-left">
+                    <i class="fa-solid fa-door-closed text-red-400 mb-2"></i>
+                    <p class="text-xs font-bold">離職交接</p>
+                    <p class="text-[9px] text-slate-400">財產還列、保密 [cite: 81, 82]</p>
+                </button>
+            </div>
+        </div>
+
+        <div v-if="activeTab === 'finance'" class="space-y-6">
+            <section class="glass p-6 rounded-[2rem] shadow-xl">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-slate-700">費用報支</h3>
+                    <p class="text-xl font-black text-indigo-600 font-mono">${{ totalExp }}</p>
+                </div>
+                
+                <div class="space-y-3">
+                    <div class="flex gap-2">
+                        <select v-model="newExp.type" class="flex-1 bg-slate-100 p-3 rounded-xl text-sm outline-none">
+                            <option value="交通費">🚗 交通費 </option>
+                            <option value="餐飲費">🍱 餐飲費 [cite: 54]</option>
+                            <option value="住宿費">🏨 住宿費 [cite: 56]</option>
+                            <option value="其他費用">📦 其他/零用金</option>
+                        </select>
+                        <input v-model.number="newExp.amount" type="number" placeholder="金額" class="w-24 bg-slate-100 p-3 rounded-xl text-sm outline-none">
+                    </div>
+                    <input v-model="newExp.note" placeholder="備註/參與人數/對象 [cite: 61]" class="w-full bg-slate-100 p-3 rounded-xl text-sm outline-none">
+                    
+                    <div class="relative">
+                        <input type="file" accept="image/*" @change="handleImgUpload" id="img-upload" class="hidden">
+                        <label for="img-upload" class="flex items-center justify-center w-full py-3 bg-slate-100 border-2 border-dashed border-slate-200 rounded-xl text-slate-500 cursor-pointer hover:bg-slate-200">
+                            <i class="fa-solid fa-camera mr-2"></i>{{ newExp.image ? '更換收據' : '拍攝/上傳收據 ' }}
+                        </label>
+                        <img v-if="newExp.image" :src="newExp.image" class="w-full h-32 object-cover rounded-xl mt-2 border">
+                    </div>
+
+                    <p v-if="newExp.amount > 2000" class="text-[10px] text-orange-500 font-bold"><i class="fa-solid fa-triangle-exclamation mr-1"></i>超過 NT$2,000 應事前報備主管 </p>
+
+                    <button @click="addExp" class="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg">新增紀錄</button>
+                    <button @click="exportCSV" class="w-full py-3 bg-slate-800 text-white rounded-xl text-xs font-bold"><i class="fa-solid fa-file-csv mr-2"></i>匯出 CSV 報表 [cite: 62]</button>
+                </div>
+            </section>
+        </div>
+
+        <div v-if="activeTab === 'manual'" class="space-y-4">
+            <section class="glass p-6 rounded-[2rem] shadow-xl overflow-y-auto max-h-[60vh] no-scrollbar">
+                <h2 class="font-bold text-lg mb-4 text-slate-800 border-b pb-2">恰口科研工作規則 [cite: 2]</h2>
+                <div class="space-y-4 text-sm text-slate-600 leading-relaxed">
+                    <div>
+                        <p class="font-bold text-slate-800">● 工作時間 [cite: 17]</p>
+                        <p>每日正常工時 8 小時，每週不超過 40 小時。繼續工作 4 小時休息 30 分鐘 [cite: 18]。</p>
+                    </div>
+                    <div>
+                        <p class="font-bold text-slate-800">● 請假流程 [cite: 38]</p>
+                        <p>應事先於系統辦理。病假連 2 日以上需診斷證明 [cite: 39]。無故不到工以曠職論 [cite: 40]。</p>
+                    </div>
+                    <div>
+                        <p class="font-bold text-slate-800">● 保密與發明 [cite: 82, 90]</p>
+                        <p>離職後仍具保密義務。職務上之研發成果與專利權歸屬公司所有。</p>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div v-if="activeTab === 'profile'" class="space-y-4">
+            <section class="glass p-6 rounded-[2rem] shadow-xl">
+                <h3 class="font-bold text-slate-700 mb-4">員工資料管理</h3>
+                <div class="space-y-3">
+                    <input v-model="profile.name" placeholder="姓名" class="w-full bg-slate-50 p-3 rounded-xl text-sm border">
+                    <input v-model="profile.id" placeholder="工號 (例如：S001)" class="w-full bg-slate-50 p-3 rounded-xl text-sm border">
+                    <input v-model="profile.emergency" placeholder="緊急聯絡人 [cite: 8]" class="w-full bg-slate-50 p-3 rounded-xl text-sm border">
+                    <button @click="saveProfile" class="w-full py-4 bg-slate-800 text-white rounded-2xl font-bold">儲存更新</button>
+                    <button @click="clearLocal" class="w-full py-2 text-red-400 text-[10px] font-bold">清空本機所有資料</button>
+                </div>
+            </section>
+        </div>
+
+    </main>
+
+    <nav class="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/90 backdrop-blur-md border-t flex justify-around p-4 rounded-t-[2.5rem] z-50">
+        <button @click="activeTab = 'home'" :class="{'active-tab': activeTab === 'home'}" class="flex flex-col items-center pt-2 text-slate-300">
+            <i class="fa-solid fa-house"></i><span class="text-[10px] mt-1 font-bold">首頁</span>
+        </button>
+        <button @click="activeTab = 'finance'" :class="{'active-tab': activeTab === 'finance'}" class="flex flex-col items-center pt-2 text-slate-300">
+            <i class="fa-solid fa-wallet"></i><span class="text-[10px] mt-1 font-bold">報支</span>
+        </button>
+        <button @click="activeTab = 'manual'" :class="{'active-tab': activeTab === 'manual'}" class="flex flex-col items-center pt-2 text-slate-300">
+            <i class="fa-solid fa-book-open"></i><span class="text-[10px] mt-1 font-bold">手冊</span>
+        </button>
+        <button @click="activeTab = 'profile'" :class="{'active-tab': activeTab === 'profile'}" class="flex flex-col items-center pt-2 text-slate-300">
+            <i class="fa-solid fa-id-card"></i><span class="text-[10px] mt-1 font-bold">人事</span>
+        </button>
+    </nav>
+
+    <div v-if="showSOP" class="fixed inset-0 bg-black/60 z-[100] flex items-end">
+        <div class="w-full bg-white rounded-t-[3rem] p-8 space-y-4 slide-up">
+            <h3 class="font-bold text-xl">{{ sopType === 'in' ? '入職標準流程' : '離職標準流程' }}</h3>
+            <ul class="space-y-3 text-sm text-slate-600">
+                <li v-for="item in sopItems" :key="item" class="flex items-center gap-2">
+                    <i class="fa-solid fa-circle-check text-green-500"></i> {{ item }}
+                </li>
+            </ul>
+            <button @click="showSOP = false" class="w-full py-4 bg-slate-100 rounded-2xl font-bold mt-4">關閉</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const { createApp, ref, onMounted, watch, computed } = Vue;
+
+    createApp({
+        setup() {
+            const activeTab = ref('home');
+            const todayDate = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+            
+            // 資料對象
+            const profile = ref({ name: '', id: '', emergency: '' });
+            const attendance = ref({ in: null, out: null });
+            const expenses = ref([]);
+            const newExp = ref({ type: '交通費', amount: null, note: '', image: null });
+            
+            // 地圖與導航
+            const locationSearch = ref('');
+            let map;
+
+            onMounted(() => {
+                // 初始化地圖 (預設設在台灣中心或恰口科研)
+                map = L.map('map').setView([24.78, 120.99], 13);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+                // 載入 localStorage
+                const savedProfile = localStorage.getItem('ck_profile');
+                if (savedProfile) profile.value = JSON.parse(savedProfile);
+                const savedExp = localStorage.getItem('ck_exp');
+                if (savedExp) expenses.value = JSON.parse(savedExp);
+            });
+
+            // 功能：打卡
+            const handleClock = (type) => {
+                const now = new Date().toLocaleTimeString('zh-TW', { hour12: false, hour: '2-digit', minute: '2-digit' });
+                if (type === 'in') attendance.value.in = now;
+                else attendance.value.out = now;
+            };
+
+            // 功能：報支影像 [cite: 58, 60]
+            const handleImgUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => newExp.value.image = event.target.result;
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const addExp = () => {
+                if (!newExp.value.amount) return alert('請輸入金額');
+                expenses.value.unshift({ ...newExp.value, date: new Date().toLocaleDateString() });
+                newExp.value = { type: '交通費', amount: null, note: '', image: null };
+                localStorage.setItem('ck_exp', JSON.stringify(expenses.value));
+            };
+
+            const totalExp = computed(() => expenses.value.reduce((s, i) => s + i.amount, 0));
+
+            // 功能：導航
+            const openNavigation = () => {
+                if (!locationSearch.value) return alert('請輸入目的地');
+                window.open(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(locationSearch.value)}`, '_blank');
+            };
+
+            // 功能：SOP 內容 
+            const showSOP = ref(false);
+            const sopType = ref('');
+            const sopItems = computed(() => {
+                return sopType.value === 'in' 
+                    ? ['繳交身分證影本、學歷證明 [cite: 8]', '提供體檢報告 [cite: 8]', '簽署勞動契約與保密協議', '設定公司通訊軟體帳號']
+                    : ['列冊交還公司財產 (電腦、門禁卡) [cite: 81]', '研發數據與電子資料移交 [cite: 81]', '確認離職後保密義務義務義務義務義務 [cite: 82]', '填寫離職手續單'];
+            });
+            const openSOP = (type) => { sopType.value = type; showSOP.value = true; };
+
+            const saveProfile = () => { localStorage.setItem('ck_profile', JSON.stringify(profile.value)); alert('資料已儲存'); };
+            const exportCSV = () => {
+                let csv = "\ufeff日期,類別,金額,備註,收據影像\n";
+                expenses.value.forEach(i => csv += `${i.date},${i.type},${i.amount},${i.note},${i.image ? '有附件' : '無'}\n`);
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement("a");
+                link.href = URL.createObjectURL(blob);
+                link.download = `恰口科研報支單_${new Date().toISOString().slice(0,10)}.csv`;
+                link.click();
+            };
+
+            const clearLocal = () => { if(confirm('確定要清空嗎？')) { localStorage.clear(); location.reload(); } };
+
+            return { activeTab, todayDate, profile, attendance, expenses, newExp, totalExp, handleClock, handleImgUpload, addExp, openNavigation, locationSearch, showSOP, sopType, sopItems, openSOP, saveProfile, exportCSV, clearLocal };
+        }
+    }).mount('#app');
+</script>
+</body>
+</html>
